@@ -18,6 +18,11 @@ public static class TaskEndpoints
         {
             try
             {
+                if (Random.Shared.NextDouble() < 0.4)
+                {
+                    await Task.Delay(Random.Shared.Next(2000, 5000));
+                }
+
                 var tasks = await service.GetAllAsync();
                 var response = tasks.Select(MapToResponse).ToList();
                 return Results.Ok(response);

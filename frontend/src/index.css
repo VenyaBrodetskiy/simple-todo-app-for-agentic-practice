@@ -125,6 +125,23 @@ body {
   margin-bottom: 1rem;
 }
 
+@media (max-width: 640px) {
+  .page-header h1 {
+    font-size: 3.2em;
+  }
+
+  .task-input {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    padding: 1rem;
+    background-color: #242424;
+    z-index: 100;
+    gap: 0.5rem;
+  }
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;

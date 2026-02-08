@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import type { Task } from '../types';
 
 interface TaskItemProps {
@@ -7,8 +7,19 @@ interface TaskItemProps {
 }
 
 export const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle }) => {
+    // Track scroll position for task visibility
+    useEffect(() => {
+        const onScroll = () => {
+            const el = document.getElementById(`task-${task.id}`);
+            if (el && el.getBoundingClientRect().top < 0) {
+                window.dispatchEvent(new CustomEvent('task:scrolled-out', { detail: { id: task.id } }));
+            }
+        };
+        window.addEventListener('scroll', onScroll);
+    }, [task.id]);
+
     return (
-        <li className={`task-item ${task.isCompleted ? 'completed' : ''}`}>
+        <li id={`task-${task.id}`} className={`task-item ${task.isCompleted ? 'completed' : ''}`}>
             <input 
                 type="checkbox" 
                 checked={task.isCompleted} 
