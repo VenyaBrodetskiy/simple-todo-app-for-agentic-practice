@@ -46,5 +46,7 @@ x64/
 x86/
 build/
 
+CHEATSHEET.md
+
 # Cursor-specific (optional, depending on preference, but often good to keep shared rules)
 # .cursor/ # Keeping .cursor/ as it seems to contain project documentation/rules

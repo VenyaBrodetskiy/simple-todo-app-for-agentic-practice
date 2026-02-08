@@ -10,9 +10,10 @@ This app has several hidden bugs. Use an AI agent with Chrome DevTools MCP to fi
 3. Ask the agent to investigate:
 
 > Open http://localhost:5173 in the browser and investigate this web app for issues.
-> Check the console for errors, inspect network requests for problems,
+> First, use the app as a regular user -- add a few tasks, toggle them, and verify the flows work.
+> Then check the console for errors, inspect network requests for problems,
 > test the layout at mobile viewport sizes (375x667), and look for
-> performance or memory concerns. Report everything you find and then fix it.
+> performance or memory concerns. Report everything you find. I will verify and later ask you to fix it.
 
 ## Hints (if the agent gets stuck)
 
@@ -22,3 +23,4 @@ This app has several hidden bugs. Use an AI agent with Chrome DevTools MCP to fi
 | Network | Network tab -- watch response times on GET `/api/tasks` |
 | Layout | Resize viewport to 375x667, take a screenshot |
 | Memory | Check for accumulating event listeners on `window` |
+| Forms | Try adding a task by pressing Enter -- watch the network tab closely |

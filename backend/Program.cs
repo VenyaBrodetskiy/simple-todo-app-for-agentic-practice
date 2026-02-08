@@ -30,8 +30,6 @@ app.UseCors(policy => policy
     .AllowAnyMethod()
     .AllowAnyHeader());
 
-app.UseHttpsRedirection();
-
 // Register Endpoints
 app.MapTaskEndpoints();
 
