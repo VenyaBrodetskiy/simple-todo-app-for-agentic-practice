@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 import { logger } from '../utils/logger';
 import type { Task } from '../types';
@@ -8,7 +8,7 @@ export const useTasks = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const loadTasks = async () => {
+    const loadTasks = useCallback(async () => {
         try {
             setLoading(true);
             const data = await api.getTasks();
@@ -22,7 +22,7 @@ export const useTasks = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     const handleAddTask = async (title: string) => {
         try {
@@ -50,7 +50,20 @@ export const useTasks = () => {
 
     useEffect(() => {
         loadTasks();
-    }, []);
+    }, [loadTasks]);
+
+    // Subscribe to API data change events for real-time consistency
+    useEffect(() => {
+        const handleDataChange = (e: Event) => {
+            const { entity } = (e as CustomEvent).detail;
+            if (entity === 'tasks') {
+                loadTasks();
+            }
+        };
+
+        window.addEventListener('api:data-changed', handleDataChange);
+        return () => window.removeEventListener('api:data-changed', handleDataChange);
+    }, [loadTasks]);
 
     return {
         tasks,

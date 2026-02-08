@@ -1,6 +1,10 @@
 import { config } from '../config';
 import type { Task } from '../types';
 
+const notifyDataChange = (entity: string) => {
+    window.dispatchEvent(new CustomEvent('api:data-changed', { detail: { entity } }));
+};
+
 export const api = {
     baseUrl: config.API_URL,
 
@@ -23,7 +27,9 @@ export const api = {
         if (!response.ok) {
             throw new Error('Failed to create task');
         }
-        return response.json();
+        const task = await response.json();
+        notifyDataChange('tasks');
+        return task;
     },
 
     updateTask: async (id: string, updates: Partial<Task>): Promise<Task> => {
@@ -37,6 +43,8 @@ export const api = {
         if (!response.ok) {
             throw new Error('Failed to update task');
         }
-        return response.json();
+        const task = await response.json();
+        notifyDataChange('tasks');
+        return task;
     }
 };
