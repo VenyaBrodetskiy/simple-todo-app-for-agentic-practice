@@ -1,0 +1,11 @@
+{
+  "app.title": "Simple Task Manager",
+  "app.subtitle": "Simple task management for your day.",
+  "tasks.loading": "Loading tasks...",
+  "tasks.empty": "No tasks yet. Add one above!",
+  "tasks.placeholder": "What needs to be done?",
+  "tasks.addButton": "Add Task",
+  "errors.loadFailed": "Failed to load tasks",
+  "errors.addFailed": "Failed to add task",
+  "errors.updateFailed": "Failed to update task"
+}

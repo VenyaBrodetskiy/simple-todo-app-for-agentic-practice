@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { logger } from '../utils/logger';
+import i18n from '../i18n';
 import type { Task } from '../types';
 
 export const useTasks = () => {
@@ -16,7 +17,7 @@ export const useTasks = () => {
             setError(null);
             logger.info('Tasks loaded successfully', data.length);
         } catch (err) {
-            const message = 'Failed to load tasks';
+            const message = i18n.t('errors.loadFailed');
             setError(message);
             logger.error(message, err);
         } finally {
@@ -30,7 +31,7 @@ export const useTasks = () => {
             setTasks(prev => [...prev, newTask]);
             logger.info('Task added successfully', newTask.id);
         } catch (err) {
-            const message = 'Failed to add task';
+            const message = i18n.t('errors.addFailed');
             logger.error(message, err);
             alert(message);
         }
@@ -42,7 +43,7 @@ export const useTasks = () => {
             setTasks(prev => prev.map(t => t.id === id ? updatedTask : t));
             logger.info('Task updated successfully', id);
         } catch (err) {
-            const message = 'Failed to update task';
+            const message = i18n.t('errors.updateFailed');
             logger.error(message, err);
             alert(message);
         }

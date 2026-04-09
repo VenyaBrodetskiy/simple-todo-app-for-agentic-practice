@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface TaskInputProps {
     onAddTask: (title: string) => Promise<void>;
 }
 
 export const TaskInput: React.FC<TaskInputProps> = ({ onAddTask }) => {
+    const { t } = useTranslation();
     const [title, setTitle] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -27,11 +29,11 @@ export const TaskInput: React.FC<TaskInputProps> = ({ onAddTask }) => {
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="What needs to be done?"
+                placeholder={t('tasks.placeholder')}
                 disabled={isSubmitting}
             />
             <button type="submit" disabled={isSubmitting || !title.trim()}>
-                Add Task
+                {t('tasks.addButton')}
             </button>
         </form>
     );
