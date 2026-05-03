@@ -125,13 +125,62 @@ Hooks **enforce** what prompts only suggest. Both Claude Code and Copilot have r
 
 ### 2.2 Claude Code — write three scripts
 
-Create `.claude/scripts/` and `chmod +x` each:
+> Prerequisite: `jq` (`brew install jq` / `apt install jq` / `choco install jq`). It parses the JSON the harness sends on stdin.
 
-| Script | Reads from stdin | Behavior |
-|--------|------------------|----------|
-| `format.sh` | `tool_input.file_path` | `npx prettier --write` for `*.{ts,tsx,js,json,md}`; `dotnet format --include <file>` for `*.cs`. Exit `0`. |
-| `guard-bash.sh` | `tool_input.command` | If contains `rm -rf`, `sudo`, or `git push --force`: write reason to stderr, exit `2` (block). Else exit `0`. |
-| `notify.sh` | (any) | Fire a desktop notification (`terminal-notifier` / `notify-send` / `osascript`). Exit `0`. |
+Create `.claude/scripts/` and `chmod +x` each file below.
+
+**`.claude/scripts/format.sh`** — formats the file Claude just edited:
+
+```bash
+#!/usr/bin/env bash
+file=$(jq -r '.tool_input.file_path // empty')
+[ -z "$file" ] && exit 0
+
+case "$file" in
+  *.ts|*.tsx|*.js|*.json|*.md)
+    npx --yes prettier --write "$file" >/dev/null 2>&1
+    echo "formatted $file with prettier"
+    ;;
+  *.cs)
+    (cd backend && dotnet format --include "$file") >/dev/null 2>&1
+    echo "formatted $file with dotnet format"
+    ;;
+esac
+exit 0
+```
+
+**`.claude/scripts/guard-bash.sh`** — blocks dangerous bash before it runs:
+
+```bash
+#!/usr/bin/env bash
+cmd=$(jq -r '.tool_input.command // empty')
+
+case "$cmd" in
+  *"rm -rf"*|*"sudo "*|*"git push --force"*|*"git push -f"*)
+    echo "Blocked dangerous command: $cmd" >&2
+    exit 2
+    ;;
+esac
+exit 0
+```
+
+**`.claude/scripts/notify.sh`** — desktop ping when a sub-agent finishes:
+
+```bash
+#!/usr/bin/env bash
+msg="Claude sub-agent finished"
+
+if command -v terminal-notifier >/dev/null 2>&1; then
+  terminal-notifier -title "Claude Code" -message "$msg"
+elif command -v osascript >/dev/null 2>&1; then
+  osascript -e "display notification \"$msg\" with title \"Claude Code\""
+elif command -v notify-send >/dev/null 2>&1; then
+  notify-send "Claude Code" "$msg"
+fi
+exit 0
+```
+
+Don't forget: `chmod +x .claude/scripts/*.sh`.
 
 ### 2.3 Copilot CLI — `.github/hooks/format.json`
 
