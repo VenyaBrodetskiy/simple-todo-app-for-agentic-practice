@@ -398,11 +398,6 @@ The startup banner should list the loaded hook file (`.github/hooks/hooks.json`)
 - **Hooks firing:** each dev edit appends a `[format]` line to `hooks.log`. Each sub-agent finish appends `[notify]`. The parent agent's chat only shows hook fires for the parent's own edits — sub-agent fires are invisible there. The log is the truth.
 - **`PLAN.md` is the contract:** the two devs never share context — only the file. If they disagree on the API shape, the plan was too vague.
 - **Reviewer is read-only.** If it tries to edit, your `tools:` list isn't being honored.
-- **Lane discipline:** after step 3, run `git show HEAD --stat` and `git show HEAD~1 --stat`. The frontend commit should touch only `frontend/`, the backend commit only `backend/`. Any crossover means a dev strayed.
-
-### 3.3 Copilot fall-back
-
-Copilot chat modes can't be invoked in parallel today. Run steps 3 and 4 sequentially.
 
 ---
 
