@@ -99,6 +99,44 @@ Read the diff (`git diff main...HEAD`) and:
 - One summary message. No edits.
 ```
 
+### 1.6 Restart your session and verify the agents loaded
+
+Agent files are read at session start. Restart before continuing.
+
+**Claude Code:**
+
+```text
+/exit
+claude
+/agents
+```
+
+Under **Project agents** you should see all four with their model labels:
+
+```text
+Project agents (.claude/agents)
+backend-dev    · sonnet
+code-reviewer  · opus
+frontend-dev   · sonnet
+manual-tester  · haiku
+```
+
+**Copilot — VS Code:**
+
+1. Command Palette (`Ctrl/Cmd+Shift+P`) → **Developer: Reload Window**.
+2. Open the Chat panel and click the **chat mode picker** (dropdown above the chat input). Your four modes from `.github/chatmodes/` should be listed.
+
+**Copilot — CLI:**
+
+```text
+/exit          # or Ctrl+D
+copilot
+```
+
+Then type `@` in the prompt — the agents from `.github/chatmodes/` should appear in the picker.
+
+> If an agent is missing: check the file is in the right folder, the YAML frontmatter parses cleanly (no tabs, quotes around any descriptions with colons), and the filename ends in `.md` (Claude) or `.chatmode.md` (Copilot).
+
 ---
 
 ## Part 2 — Add lifecycle hooks
