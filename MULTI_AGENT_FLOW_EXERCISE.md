@@ -2,7 +2,7 @@
 
 You'll add a `priority` field (`low | medium | high`) to tasks — persisted in the backend, shown as a colored badge in the UI, used as a secondary sort key. You'll drive it through a coordinated workflow of built-in + custom sub-agents, with lifecycle hooks enforcing the boring stuff.
 
-Works in **Claude Code** and **GitHub Copilot** (CLI and VS Code). Where they diverge, the step is split.
+Works in **Claude Code** and **GitHub Copilot** (CLI, VS Code, cloud agent). Where they diverge, the step is split.
 
 ---
 
@@ -182,9 +182,9 @@ exit 0
 
 Don't forget: `chmod +x .claude/scripts/*.sh`.
 
-### 2.3 Copilot CLI — `.github/hooks/format.json`
+### 2.3 Copilot — `.github/hooks/hooks.json`
 
-Auto-loaded from the working directory. Events use **lowerCamelCase**.
+One file works for **Copilot CLI, VS Code Copilot, and the cloud agent**. Auto-loaded from `.github/hooks/*.json` in the repo (CLI: working directory; cloud agent: default branch). Available events (lowerCamelCase): `sessionStart`, `sessionEnd`, `userPromptSubmitted`, `preToolUse`, `postToolUse`, `errorOccurred`. (No `stop` / `subagentStop` equivalent.)
 
 ```json
 {
@@ -193,40 +193,56 @@ Auto-loaded from the working directory. Events use **lowerCamelCase**.
     "postToolUse": [
       {
         "type": "command",
-        "bash": "npx prettier --write \"frontend/**/*.{ts,tsx,js,json,md}\" 2>/dev/null; (cd backend && dotnet format) 2>/dev/null; true",
-        "powershell": "npx prettier --write \"frontend/**/*.{ts,tsx,js,json,md}\"; cd backend; dotnet format"
+        "bash": ".github/hooks/scripts/format.sh",
+        "powershell": ".github/hooks/scripts/format.ps1",
+        "timeoutSec": 30
       }
-    ]
-  }
-}
-```
-
-### 2.4 VS Code Copilot — `.github/hooks/format.json`
-
-Auto-loaded from the workspace. Events use **PascalCase** (Preview feature).
-
-```json
-{
-  "hooks": {
-    "PostToolUse": [
+    ],
+    "preToolUse": [
       {
         "type": "command",
-        "command": "npx prettier --write \"frontend/**/*.{ts,tsx,js,json,md}\" 2>/dev/null; (cd backend && dotnet format) 2>/dev/null; true"
+        "bash": ".github/hooks/scripts/guard-tool.sh",
+        "timeoutSec": 10
       }
     ]
   }
 }
 ```
 
-For **agent-scoped hooks** (hooks declared inside a chat-mode `.md` frontmatter), enable in VS Code settings:
+### 2.4 Copilot — write two scripts
 
-```json
-{ "chat.useCustomAgentHooks": true }
+Stdin sends JSON with top-level `toolName` and `toolInput` (camelCase — different from Claude Code's `tool_input.*`). Create `.github/hooks/scripts/` and `chmod +x` each file.
+
+**`.github/hooks/scripts/format.sh`** — formats the whole repo after every edit (coarse but bulletproof; the per-file `toolInput` shape varies by tool):
+
+```bash
+#!/usr/bin/env bash
+npx --yes prettier --write "frontend/**/*.{ts,tsx,js,json,md}" >/dev/null 2>&1
+(cd backend && dotnet format) >/dev/null 2>&1
+echo "formatted repo"
+exit 0
 ```
 
-Verify the hook fired: **Output** panel → **GitHub Copilot Chat Hooks**.
+**`.github/hooks/scripts/guard-tool.sh`** — blocks dangerous tool calls:
 
-> If hooks never run, your org admin may have disabled the feature.
+```bash
+#!/usr/bin/env bash
+input=$(cat)
+combined=$(jq -r '"\(.toolName // "") \(.toolInput | tostring)"' <<< "$input" 2>/dev/null || echo "$input")
+
+case "$combined" in
+  *"rm -rf"*|*"sudo "*|*"git push --force"*|*"git push -f"*|*"DROP TABLE"*)
+    echo "Blocked dangerous operation: $combined" >&2
+    exit 1
+    ;;
+esac
+exit 0
+```
+
+Notes:
+- For **agent-scoped hooks** (hooks declared inside a chat-mode `.md` frontmatter) in VS Code, enable `chat.useCustomAgentHooks: true` in settings.
+- Verify the hook fired: VS Code → **Output** panel → **GitHub Copilot Chat Hooks**.
+- If hooks never run, your org admin may have disabled the feature.
 
 ---
 
