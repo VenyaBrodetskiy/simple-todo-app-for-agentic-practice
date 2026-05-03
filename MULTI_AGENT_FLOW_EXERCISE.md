@@ -145,6 +145,8 @@ Then type `@` in the prompt — the agents from `.github\chatmodes\` should appe
 
 Hooks **enforce** what prompts only suggest. Both Claude Code and Copilot have real lifecycle hooks today. Scripts below are **PowerShell**; PowerShell 5.1 ships with Windows so no install needed.
 
+> **Why each script appends to a log file:** parent and sub-agent contexts are isolated. When a sub-agent triggers a hook, the parent never sees it — only the sub-agent does, briefly, before its context is discarded. The shared `hooks.log` is your only ground truth for what actually fired across all contexts.
+
 > If your `Get-ExecutionPolicy` returns `Restricted`, run once in an elevated PowerShell:
 > `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
@@ -168,7 +170,7 @@ Hooks **enforce** what prompts only suggest. Both Claude Code and Copilot have r
 
 ### 2.2 Claude Code — write three PowerShell scripts
 
-Create the folder `.claude\scripts\` and save each file below.
+Create the folder `.claude\scripts\` and save each file below. All three append a line to `.claude\hooks.log` so you can inspect what fired afterwards.
 
 **`.claude\scripts\format.ps1`** — formats the file Claude just edited:
 
@@ -177,14 +179,18 @@ $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
 $file = $payload.tool_input.file_path
 if (-not $file) { exit 0 }
 
+$ts = (Get-Date).ToString("HH:mm:ss")
+
 if ($file -match '\.(ts|tsx|js|json|md)$') {
     npx --yes prettier --write $file *> $null
+    Add-Content -Path ".claude\hooks.log" -Value "$ts [format]  $file -> prettier"
     Write-Output "formatted $file with prettier"
 }
 elseif ($file -match '\.cs$') {
     Push-Location backend
     dotnet format --include $file *> $null
     Pop-Location
+    Add-Content -Path ".claude\hooks.log" -Value "$ts [format]  $file -> dotnet format"
     Write-Output "formatted $file with dotnet format"
 }
 exit 0
@@ -195,8 +201,10 @@ exit 0
 ```powershell
 $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
 $cmd = $payload.tool_input.command
+$ts = (Get-Date).ToString("HH:mm:ss")
 
 if ($cmd -match 'rm\s+-rf|sudo\s|git\s+push\s+(--force|-f)|Remove-Item.*-Recurse.*-Force') {
+    Add-Content -Path ".claude\hooks.log" -Value "$ts [guard]   BLOCKED: $cmd"
     [Console]::Error.WriteLine("Blocked dangerous command: $cmd")
     exit 2
 }
@@ -207,6 +215,10 @@ exit 0
 
 ```powershell
 $msg = "Claude sub-agent finished"
+$ts = (Get-Date).ToString("HH:mm:ss")
+
+Add-Content -Path ".claude\hooks.log" -Value "$ts [notify]  sub-agent finished"
+
 try {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
@@ -252,15 +264,17 @@ One file works for **Copilot CLI, VS Code Copilot, and the cloud agent**. Auto-l
 
 ### 2.4 Copilot — write two PowerShell scripts
 
-Stdin sends JSON with top-level `toolName` and `toolInput` (camelCase — different from Claude Code's `tool_input.*`). Create `.github\hooks\scripts\` and save each file.
+Stdin sends JSON with top-level `toolName` and `toolInput` (camelCase — different from Claude Code's `tool_input.*`). Both scripts append to `.github\hooks\hooks.log`. Create `.github\hooks\scripts\` and save each file.
 
 **`.github\hooks\scripts\format.ps1`** — formats the whole repo after every edit (coarse but bulletproof; the per-file `toolInput` shape varies by tool):
 
 ```powershell
+$ts = (Get-Date).ToString("HH:mm:ss")
 npx --yes prettier --write "frontend/**/*.{ts,tsx,js,json,md}" *> $null
 Push-Location backend
 dotnet format *> $null
 Pop-Location
+Add-Content -Path ".github\hooks\hooks.log" -Value "$ts [format]  repo formatted"
 Write-Output "formatted repo"
 exit 0
 ```
@@ -269,6 +283,7 @@ exit 0
 
 ```powershell
 $raw = [Console]::In.ReadToEnd()
+$ts = (Get-Date).ToString("HH:mm:ss")
 try {
     $payload = $raw | ConvertFrom-Json
     $combined = "$($payload.toolName) $($payload.toolInput | ConvertTo-Json -Compress)"
@@ -277,6 +292,7 @@ try {
 }
 
 if ($combined -match 'rm\s+-rf|sudo\s|git\s+push\s+(--force|-f)|DROP\s+TABLE|Remove-Item.*-Recurse.*-Force') {
+    Add-Content -Path ".github\hooks\hooks.log" -Value "$ts [guard]   BLOCKED: $combined"
     [Console]::Error.WriteLine("Blocked dangerous operation: $combined")
     exit 1
 }
@@ -334,6 +350,12 @@ The startup banner should list the loaded hook file (`.github/hooks/hooks.json`)
 
 > **Feature**: add a `priority` field (`low | medium | high`) to tasks — persisted in the backend, shown as a colored badge, used as a secondary sort key. All four languages need new i18n keys.
 >
+> Before you start, clear the hooks log so this run is isolated:
+> ```
+> Remove-Item .claude\hooks.log -ErrorAction SilentlyContinue
+> Remove-Item .github\hooks\hooks.log -ErrorAction SilentlyContinue
+> ```
+>
 > Run this exact flow, **one phase at a time**. Commit at each phase boundary so the git log tells the story.
 >
 > 1. **Explore** — use the built-in `Explore` sub-agent to map: where tasks are defined, how the frontend talks to the backend, where i18n keys live, where the task list is rendered. (No commit.)
@@ -362,11 +384,18 @@ The startup banner should list the loaded hook file (`.github/hooks/hooks.json`)
 >    git commit -m "fix(frontend): <what changed>"
 >    ```
 >    Re-run the reviewer when fixes land.
+>
+> 6. **Report what fired** — at the end, print the full hooks log so we can see what actually ran across every context (parent + sub-agents):
+>    ```
+>    Get-Content .claude\hooks.log         # Claude Code
+>    Get-Content .github\hooks\hooks.log   # Copilot
+>    ```
+>    Summarize: how many `[format]` lines? How many `[notify]` (sub-agent finishes)? Any `[guard] BLOCKED`?
 
 ### 3.2 What to watch for
 
 - **Parallelism (steps 3 & 4):** look for two sub-agent invocations in the **same** assistant message. If they run sequentially, push back: _"make both calls in a single message."_
-- **Hooks firing:** every dev edit should trigger the formatter (Claude Code Output / Copilot Hooks output panel).
+- **Hooks firing:** each dev edit appends a `[format]` line to `hooks.log`. Each sub-agent finish appends `[notify]`. The parent agent's chat only shows hook fires for the parent's own edits — sub-agent fires are invisible there. The log is the truth.
 - **`PLAN.md` is the contract:** the two devs never share context — only the file. If they disagree on the API shape, the plan was too vague.
 - **Reviewer is read-only.** If it tries to edit, your `tools:` list isn't being honored.
 - **Lane discipline:** after step 3, run `git show HEAD --stat` and `git show HEAD~1 --stat`. The frontend commit should touch only `frontend/`, the backend commit only `backend/`. Any crossover means a dev strayed.
@@ -381,7 +410,6 @@ Copilot chat modes can't be invoked in parallel today. Run steps 3 and 4 sequent
 
 - Did **Explore → Plan → Implement → Verify** save time, or feel like overhead?
 - Did parallel sub-agents finish faster, or did stitching results back together burn the savings?
-- Which hook fired most often? Which would you keep?
 - Did `PLAN.md` hold as a contract, or did the devs disagree?
 - If you had to keep **one** custom sub-agent for daily work — which?
 - **Read the git log:**
@@ -390,3 +418,8 @@ Copilot chat modes can't be invoked in parallel today. Run steps 3 and 4 sequent
   git show <hash> --stat       # for each commit
   ```
   Does the log read like the actual story of who built what? Did either dev stray into the other's lane (e.g. the backend commit touching `frontend/`)? If you came back to this branch in a week, would the log alone tell you what happened?
+- **Read the hooks log** (`.claude\hooks.log` or `.github\hooks\hooks.log`):
+  - How many `[format]` fires total? Compare with the number of files in `git diff main --stat` — do they roughly match (one fire per edit)?
+  - How many `[notify]` fires? It should equal the number of sub-agent invocations (Explore + Plan + 2 devs + 2 verifiers + iteration re-runs).
+  - Any `[guard] BLOCKED` entries? You're hoping for zero — that's the guard doing nothing, which is good.
+  - The parent session only sees hook fires for the parent's own edits. The log is the only place sub-agent fires show up. Did the count surprise you?
