@@ -1,6 +1,6 @@
 # Exercise: Multi-Agent Feature Flow
 
-You'll add a `priority` field (`low | medium | high`) to tasks — persisted in the backend, shown as a colored badge in the UI, used as a secondary sort key. You'll drive it through a coordinated workflow of built-in + custom sub-agents, with lifecycle hooks enforcing the boring stuff.
+You'll add a `priority` field (`low | medium | high`) to tasks — persisted in the backend, shown as a colored badge in the UI, used as a secondary sort key. You'll drive it through a coordinated workflow of built-in + custom sub-agents, with lifecycle hooks enforcing the boring stuff, and per-phase commits so the git log tells the story.
 
 Works in **Claude Code** and **GitHub Copilot** (CLI, VS Code, cloud agent). Where they diverge, the step is split. **Scripts below are written for Windows / PowerShell.**
 
@@ -38,6 +38,7 @@ You implement the frontend half of the feature in PLAN.md.
 - Never touch files under backend/.
 - Use existing i18n keys (frontend/src/locales/). Add new keys for all 4 languages if needed.
 - Run `npm run lint` before reporting done.
+- Before reporting done, stage your changes: `git add <your files>`. Do NOT commit — the orchestrator handles commits.
 - Return one summary line + files changed.
 ```
 
@@ -55,6 +56,7 @@ You implement the backend half of the feature in PLAN.md.
 - Never touch files under frontend/.
 - Update tests under backend/SimpleTaskBackend.Tests/ to cover new behavior.
 - `dotnet build` and `dotnet test` must pass.
+- Before reporting done, stage your changes: `git add <your files>`. Do NOT commit — the orchestrator handles commits.
 - Return one summary line + files changed.
 ```
 
@@ -332,13 +334,34 @@ The startup banner should list the loaded hook file (`.github/hooks/hooks.json`)
 
 > **Feature**: add a `priority` field (`low | medium | high`) to tasks — persisted in the backend, shown as a colored badge, used as a secondary sort key. All four languages need new i18n keys.
 >
-> Run this exact flow, **one phase at a time**:
+> Run this exact flow, **one phase at a time**. Commit at each phase boundary so the git log tells the story.
 >
-> 1. **Explore** — use the built-in `Explore` sub-agent to map: where tasks are defined, how the frontend talks to the backend, where i18n keys live, where the task list is rendered.
-> 2. **Plan** — use the built-in `Plan` sub-agent to produce a one-page plan. **Save it to `PLAN.md`.**
-> 3. **Implement** — invoke `frontend-dev` and `backend-dev` **in parallel, in a single message**. Each reads `PLAN.md` and implements its half. Wait for both before moving on.
-> 4. **Verify** — invoke `manual-tester` and `code-reviewer` **in parallel, in a single message**.
-> 5. **Iterate** — for each P0/P1 finding, dispatch the relevant dev. Re-run the reviewer.
+> 1. **Explore** — use the built-in `Explore` sub-agent to map: where tasks are defined, how the frontend talks to the backend, where i18n keys live, where the task list is rendered. (No commit.)
+>
+> 2. **Plan** — use the built-in `Plan` sub-agent to produce a one-page plan. **Save it to `PLAN.md`.** Then commit:
+>    ```
+>    git add PLAN.md
+>    git commit -m "plan: priority field implementation plan"
+>    ```
+>
+> 3. **Implement** — invoke `frontend-dev` and `backend-dev` **in parallel, in a single message**. Each reads `PLAN.md`, implements its half, and runs `git add <its files>` (no commit). Wait for both to return. Then make **two separate commits** to preserve authorship:
+>    ```
+>    git reset                                                  # unstage everything first
+>    git add backend/
+>    git commit -m "feat(backend): add priority field, endpoint, tests"
+>    git add frontend/
+>    git commit -m "feat(frontend): add priority badge, sort, i18n"
+>    ```
+>
+> 4. **Verify** — invoke `manual-tester` and `code-reviewer` **in parallel, in a single message**. (No commit — output is in chat.)
+>
+> 5. **Iterate** — for each P0/P1 finding, dispatch the relevant dev (who runs `git add` again). Then commit each fix:
+>    ```
+>    git commit -m "fix(backend): <what changed>"
+>    # or
+>    git commit -m "fix(frontend): <what changed>"
+>    ```
+>    Re-run the reviewer when fixes land.
 
 ### 3.2 What to watch for
 
@@ -346,6 +369,7 @@ The startup banner should list the loaded hook file (`.github/hooks/hooks.json`)
 - **Hooks firing:** every dev edit should trigger the formatter (Claude Code Output / Copilot Hooks output panel).
 - **`PLAN.md` is the contract:** the two devs never share context — only the file. If they disagree on the API shape, the plan was too vague.
 - **Reviewer is read-only.** If it tries to edit, your `tools:` list isn't being honored.
+- **Lane discipline:** after step 3, run `git show HEAD --stat` and `git show HEAD~1 --stat`. The frontend commit should touch only `frontend/`, the backend commit only `backend/`. Any crossover means a dev strayed.
 
 ### 3.3 Copilot fall-back
 
@@ -360,3 +384,9 @@ Copilot chat modes can't be invoked in parallel today. Run steps 3 and 4 sequent
 - Which hook fired most often? Which would you keep?
 - Did `PLAN.md` hold as a contract, or did the devs disagree?
 - If you had to keep **one** custom sub-agent for daily work — which?
+- **Read the git log:**
+  ```
+  git log --oneline
+  git show <hash> --stat       # for each commit
+  ```
+  Does the log read like the actual story of who built what? Did either dev stray into the other's lane (e.g. the backend commit touching `frontend/`)? If you came back to this branch in a week, would the log alone tell you what happened?
