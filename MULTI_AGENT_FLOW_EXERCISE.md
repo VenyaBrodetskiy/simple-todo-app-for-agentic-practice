@@ -1,8 +1,8 @@
 # Exercise: Multi-Agent Feature Flow
 
-You'll add a `priority` field (`low | medium | high`) to tasks — persisted in the backend, shown as a colored badge in the UI, used as a secondary sort key. You'll drive it through a coordinated workflow of built-in + custom sub-agents, with hooks (Claude Code) or path-scoped rules (Copilot) enforcing the boring stuff.
+You'll add a `priority` field (`low | medium | high`) to tasks — persisted in the backend, shown as a colored badge in the UI, used as a secondary sort key. You'll drive it through a coordinated workflow of built-in + custom sub-agents, with lifecycle hooks enforcing the boring stuff.
 
-Works in **Claude Code** and **GitHub Copilot**. Where they diverge, the step is split.
+Works in **Claude Code** and **GitHub Copilot** (CLI and VS Code). Where they diverge, the step is split.
 
 ---
 
@@ -101,11 +101,11 @@ Read the diff (`git diff main...HEAD`) and:
 
 ---
 
-## Part 2 — Add automation around edits
+## Part 2 — Add lifecycle hooks
 
-### 2.1 Claude Code — lifecycle hooks
+Hooks **enforce** what prompts only suggest. Both Claude Code and Copilot have real lifecycle hooks today.
 
-Add to `.claude/settings.json`:
+### 2.1 Claude Code — `.claude/settings.json`
 
 ```json
 {
@@ -133,25 +133,51 @@ Create `.claude/scripts/` and `chmod +x` each:
 | `guard-bash.sh` | `tool_input.command` | If contains `rm -rf`, `sudo`, or `git push --force`: write reason to stderr, exit `2` (block). Else exit `0`. |
 | `notify.sh` | (any) | Fire a desktop notification (`terminal-notifier` / `notify-send` / `osascript`). Exit `0`. |
 
-### 2.3 Copilot — path-scoped instructions (closest analogue)
+### 2.3 Copilot CLI — `.github/hooks/format.json`
 
-Copilot has no lifecycle hooks. Use **path-scoped instruction files** — applied automatically when matching files are in context.
+Auto-loaded from the working directory. Events use **lowerCamelCase**.
 
-Create `.github/instructions/format.instructions.md`:
-
-```markdown
----
-applyTo: "frontend/**/*.{ts,tsx,js,json,md},backend/**/*.cs"
----
-
-After editing any file matching this glob, run the matching formatter on it before reporting done:
-- `npx prettier --write <file>` for ts/tsx/js/json/md
-- `dotnet format --include <file>` for cs
-
-Never run `rm -rf`, `sudo`, or `git push --force`.
+```json
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "npx prettier --write \"frontend/**/*.{ts,tsx,js,json,md}\" 2>/dev/null; (cd backend && dotnet format) 2>/dev/null; true",
+        "powershell": "npx prettier --write \"frontend/**/*.{ts,tsx,js,json,md}\"; cd backend; dotnet format"
+      }
+    ]
+  }
+}
 ```
 
-This is a **suggestion**, not a guaranteed shell command. Feel the gap.
+### 2.4 VS Code Copilot — `.github/hooks/format.json`
+
+Auto-loaded from the workspace. Events use **PascalCase** (Preview feature).
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "npx prettier --write \"frontend/**/*.{ts,tsx,js,json,md}\" 2>/dev/null; (cd backend && dotnet format) 2>/dev/null; true"
+      }
+    ]
+  }
+}
+```
+
+For **agent-scoped hooks** (hooks declared inside a chat-mode `.md` frontmatter), enable in VS Code settings:
+
+```json
+{ "chat.useCustomAgentHooks": true }
+```
+
+Verify the hook fired: **Output** panel → **GitHub Copilot Chat Hooks**.
+
+> If hooks never run, your org admin may have disabled the feature.
 
 ---
 
@@ -172,7 +198,7 @@ This is a **suggestion**, not a guaranteed shell command. Feel the gap.
 ### 3.2 What to watch for
 
 - **Parallelism (steps 3 & 4):** look for two sub-agent invocations in the **same** assistant message. If they run sequentially, push back: _"make both calls in a single message."_
-- **Hooks/rules firing:** every dev edit should trigger the formatter. Two sub-agent finishes should fire two notifications (Claude Code only).
+- **Hooks firing:** every dev edit should trigger the formatter (Claude Code Output / Copilot Hooks output panel).
 - **`PLAN.md` is the contract:** the two devs never share context — only the file. If they disagree on the API shape, the plan was too vague.
 - **Reviewer is read-only.** If it tries to edit, your `tools:` list isn't being honored.
 
@@ -186,6 +212,6 @@ Copilot chat modes can't be invoked in parallel today. Run steps 3 and 4 sequent
 
 - Did **Explore → Plan → Implement → Verify** save time, or feel like overhead?
 - Did parallel sub-agents finish faster, or did stitching results back together burn the savings?
-- Which hook/rule fired most often? Which would you keep?
+- Which hook fired most often? Which would you keep?
 - Did `PLAN.md` hold as a contract, or did the devs disagree?
 - If you had to keep **one** custom sub-agent for daily work — which?
