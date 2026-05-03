@@ -281,10 +281,48 @@ if ($combined -match 'rm\s+-rf|sudo\s|git\s+push\s+(--force|-f)|DROP\s+TABLE|Rem
 exit 0
 ```
 
-Notes:
-- For **agent-scoped hooks** (hooks declared inside a chat-mode `.md` frontmatter) in VS Code, enable `chat.useCustomAgentHooks: true` in settings.
-- Verify the hook fired: VS Code → **Output** panel → **GitHub Copilot Chat Hooks**.
-- If hooks never run, your org admin may have disabled the feature.
+### 2.5 Restart your session and verify the hooks loaded
+
+Hook configs are read at session start. Restart before continuing.
+
+**Claude Code:**
+
+```text
+/exit
+claude
+/hooks
+```
+
+You should see three event entries, each with `(1)` next to it (one hook configured per event):
+
+```text
+PostToolUse  (1)
+  Edit|Write
+    powershell -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/format.ps1
+PreToolUse   (1)
+  Bash
+    powershell -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/guard-bash.ps1
+SubagentStop (1)
+  *
+    powershell -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notify.ps1
+```
+
+**Copilot — VS Code:**
+
+1. Command Palette (`Ctrl+Shift+P`) → **Developer: Reload Window**.
+2. Open the **Output** panel → choose **GitHub Copilot Chat Hooks** from the channel dropdown. On startup you should see a line for each loaded hook (`postToolUse`, `preToolUse`).
+3. Sanity test: ask Copilot to edit any file, then look for the format hook line in the same channel.
+
+**Copilot — CLI:**
+
+```text
+/exit          # or Ctrl+D
+copilot --verbose
+```
+
+The startup banner should list the loaded hook file (`.github/hooks/hooks.json`). Trigger any tool call and confirm the formatter runs.
+
+> If hooks don't appear: check the JSON parses (`Get-Content .github\hooks\hooks.json | ConvertFrom-Json`), the script paths are relative to the repo root, and (Copilot only) your org admin hasn't disabled hooks.
 
 ---
 
