@@ -2,7 +2,7 @@
 
 You'll add a `priority` field (`low | medium | high`) to tasks — persisted in the backend, shown as a colored badge in the UI, used as a secondary sort key. You'll drive it through a coordinated workflow of built-in + custom sub-agents, with lifecycle hooks enforcing the boring stuff.
 
-Works in **Claude Code** and **GitHub Copilot** (CLI, VS Code, cloud agent). Where they diverge, the step is split.
+Works in **Claude Code** and **GitHub Copilot** (CLI, VS Code, cloud agent). Where they diverge, the step is split. **Scripts below are written for Windows / PowerShell.**
 
 ---
 
@@ -73,7 +73,7 @@ model: haiku
 ---
 
 Test the feature in a real browser.
-1. Make sure backend (`dotnet run --project backend`) and frontend (`cd frontend && npm run dev`) are up.
+1. Make sure backend (`dotnet run --project backend`) and frontend (`cd frontend; npm run dev`) are up.
 2. Open http://localhost:5173.
 3. One screenshot per scenario:
    - Create a task; set each priority; verify the colored badge.
@@ -114,7 +114,7 @@ claude
 Under **Project agents** you should see all four with their model labels:
 
 ```text
-Project agents (.claude/agents)
+Project agents (.claude\agents)
 backend-dev    · sonnet
 code-reviewer  · opus
 frontend-dev   · sonnet
@@ -123,8 +123,8 @@ manual-tester  · haiku
 
 **Copilot — VS Code:**
 
-1. Command Palette (`Ctrl/Cmd+Shift+P`) → **Developer: Reload Window**.
-2. Open the Chat panel and click the **chat mode picker** (dropdown above the chat input). Your four modes from `.github/chatmodes/` should be listed.
+1. Command Palette (`Ctrl+Shift+P`) → **Developer: Reload Window**.
+2. Open the Chat panel and click the **chat mode picker** (dropdown above the chat input). Your four modes from `.github\chatmodes\` should be listed.
 
 **Copilot — CLI:**
 
@@ -133,7 +133,7 @@ manual-tester  · haiku
 copilot
 ```
 
-Then type `@` in the prompt — the agents from `.github/chatmodes/` should appear in the picker.
+Then type `@` in the prompt — the agents from `.github\chatmodes\` should appear in the picker.
 
 > If an agent is missing: check the file is in the right folder, the YAML frontmatter parses cleanly (no tabs, quotes around any descriptions with colons), and the filename ends in `.md` (Claude) or `.chatmode.md` (Copilot).
 
@@ -141,86 +141,88 @@ Then type `@` in the prompt — the agents from `.github/chatmodes/` should appe
 
 ## Part 2 — Add lifecycle hooks
 
-Hooks **enforce** what prompts only suggest. Both Claude Code and Copilot have real lifecycle hooks today.
+Hooks **enforce** what prompts only suggest. Both Claude Code and Copilot have real lifecycle hooks today. Scripts below are **PowerShell**; PowerShell 5.1 ships with Windows so no install needed.
 
-### 2.1 Claude Code — `.claude/settings.json`
+> If your `Get-ExecutionPolicy` returns `Restricted`, run once in an elevated PowerShell:
+> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+### 2.1 Claude Code — `.claude\settings.json`
 
 ```json
 {
   "hooks": {
     "PostToolUse": [
-      { "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": ".claude/scripts/format.sh" }] }
+      { "matcher": "Edit|Write", "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/format.ps1" }] }
     ],
     "PreToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": ".claude/scripts/guard-bash.sh" }] }
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/guard-bash.ps1" }] }
     ],
     "SubagentStop": [
-      { "hooks": [{ "type": "command", "command": ".claude/scripts/notify.sh" }] }
+      { "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/scripts/notify.ps1" }] }
     ]
   }
 }
 ```
 
-### 2.2 Claude Code — write three scripts
+### 2.2 Claude Code — write three PowerShell scripts
 
-> Prerequisite: `jq` (`brew install jq` / `apt install jq` / `choco install jq`). It parses the JSON the harness sends on stdin.
+Create the folder `.claude\scripts\` and save each file below.
 
-Create `.claude/scripts/` and `chmod +x` each file below.
+**`.claude\scripts\format.ps1`** — formats the file Claude just edited:
 
-**`.claude/scripts/format.sh`** — formats the file Claude just edited:
+```powershell
+$payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$file = $payload.tool_input.file_path
+if (-not $file) { exit 0 }
 
-```bash
-#!/usr/bin/env bash
-file=$(jq -r '.tool_input.file_path // empty')
-[ -z "$file" ] && exit 0
-
-case "$file" in
-  *.ts|*.tsx|*.js|*.json|*.md)
-    npx --yes prettier --write "$file" >/dev/null 2>&1
-    echo "formatted $file with prettier"
-    ;;
-  *.cs)
-    (cd backend && dotnet format --include "$file") >/dev/null 2>&1
-    echo "formatted $file with dotnet format"
-    ;;
-esac
+if ($file -match '\.(ts|tsx|js|json|md)$') {
+    npx --yes prettier --write $file *> $null
+    Write-Output "formatted $file with prettier"
+}
+elseif ($file -match '\.cs$') {
+    Push-Location backend
+    dotnet format --include $file *> $null
+    Pop-Location
+    Write-Output "formatted $file with dotnet format"
+}
 exit 0
 ```
 
-**`.claude/scripts/guard-bash.sh`** — blocks dangerous bash before it runs:
+**`.claude\scripts\guard-bash.ps1`** — blocks dangerous bash before it runs:
 
-```bash
-#!/usr/bin/env bash
-cmd=$(jq -r '.tool_input.command // empty')
+```powershell
+$payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$cmd = $payload.tool_input.command
 
-case "$cmd" in
-  *"rm -rf"*|*"sudo "*|*"git push --force"*|*"git push -f"*)
-    echo "Blocked dangerous command: $cmd" >&2
+if ($cmd -match 'rm\s+-rf|sudo\s|git\s+push\s+(--force|-f)|Remove-Item.*-Recurse.*-Force') {
+    [Console]::Error.WriteLine("Blocked dangerous command: $cmd")
     exit 2
-    ;;
-esac
+}
 exit 0
 ```
 
-**`.claude/scripts/notify.sh`** — desktop ping when a sub-agent finishes:
+**`.claude\scripts\notify.ps1`** — Windows toast when a sub-agent finishes:
 
-```bash
-#!/usr/bin/env bash
-msg="Claude sub-agent finished"
-
-if command -v terminal-notifier >/dev/null 2>&1; then
-  terminal-notifier -title "Claude Code" -message "$msg"
-elif command -v osascript >/dev/null 2>&1; then
-  osascript -e "display notification \"$msg\" with title \"Claude Code\""
-elif command -v notify-send >/dev/null 2>&1; then
-  notify-send "Claude Code" "$msg"
-fi
+```powershell
+$msg = "Claude sub-agent finished"
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $ni = New-Object System.Windows.Forms.NotifyIcon
+    $ni.Icon = [System.Drawing.SystemIcons]::Information
+    $ni.BalloonTipTitle = "Claude Code"
+    $ni.BalloonTipText  = $msg
+    $ni.Visible = $true
+    $ni.ShowBalloonTip(3000)
+    Start-Sleep -Milliseconds 1500
+    $ni.Dispose()
+} catch {
+    Write-Host "[Claude Code] $msg"
+}
 exit 0
 ```
 
-Don't forget: `chmod +x .claude/scripts/*.sh`.
-
-### 2.3 Copilot — `.github/hooks/hooks.json`
+### 2.3 Copilot — `.github\hooks\hooks.json`
 
 One file works for **Copilot CLI, VS Code Copilot, and the cloud agent**. Auto-loaded from `.github/hooks/*.json` in the repo (CLI: working directory; cloud agent: default branch). Available events (lowerCamelCase): `sessionStart`, `sessionEnd`, `userPromptSubmitted`, `preToolUse`, `postToolUse`, `errorOccurred`. (No `stop` / `subagentStop` equivalent.)
 
@@ -231,7 +233,6 @@ One file works for **Copilot CLI, VS Code Copilot, and the cloud agent**. Auto-l
     "postToolUse": [
       {
         "type": "command",
-        "bash": ".github/hooks/scripts/format.sh",
         "powershell": ".github/hooks/scripts/format.ps1",
         "timeoutSec": 30
       }
@@ -239,7 +240,7 @@ One file works for **Copilot CLI, VS Code Copilot, and the cloud agent**. Auto-l
     "preToolUse": [
       {
         "type": "command",
-        "bash": ".github/hooks/scripts/guard-tool.sh",
+        "powershell": ".github/hooks/scripts/guard-tool.ps1",
         "timeoutSec": 10
       }
     ]
@@ -247,33 +248,36 @@ One file works for **Copilot CLI, VS Code Copilot, and the cloud agent**. Auto-l
 }
 ```
 
-### 2.4 Copilot — write two scripts
+### 2.4 Copilot — write two PowerShell scripts
 
-Stdin sends JSON with top-level `toolName` and `toolInput` (camelCase — different from Claude Code's `tool_input.*`). Create `.github/hooks/scripts/` and `chmod +x` each file.
+Stdin sends JSON with top-level `toolName` and `toolInput` (camelCase — different from Claude Code's `tool_input.*`). Create `.github\hooks\scripts\` and save each file.
 
-**`.github/hooks/scripts/format.sh`** — formats the whole repo after every edit (coarse but bulletproof; the per-file `toolInput` shape varies by tool):
+**`.github\hooks\scripts\format.ps1`** — formats the whole repo after every edit (coarse but bulletproof; the per-file `toolInput` shape varies by tool):
 
-```bash
-#!/usr/bin/env bash
-npx --yes prettier --write "frontend/**/*.{ts,tsx,js,json,md}" >/dev/null 2>&1
-(cd backend && dotnet format) >/dev/null 2>&1
-echo "formatted repo"
+```powershell
+npx --yes prettier --write "frontend/**/*.{ts,tsx,js,json,md}" *> $null
+Push-Location backend
+dotnet format *> $null
+Pop-Location
+Write-Output "formatted repo"
 exit 0
 ```
 
-**`.github/hooks/scripts/guard-tool.sh`** — blocks dangerous tool calls:
+**`.github\hooks\scripts\guard-tool.ps1`** — blocks dangerous tool calls:
 
-```bash
-#!/usr/bin/env bash
-input=$(cat)
-combined=$(jq -r '"\(.toolName // "") \(.toolInput | tostring)"' <<< "$input" 2>/dev/null || echo "$input")
+```powershell
+$raw = [Console]::In.ReadToEnd()
+try {
+    $payload = $raw | ConvertFrom-Json
+    $combined = "$($payload.toolName) $($payload.toolInput | ConvertTo-Json -Compress)"
+} catch {
+    $combined = $raw
+}
 
-case "$combined" in
-  *"rm -rf"*|*"sudo "*|*"git push --force"*|*"git push -f"*|*"DROP TABLE"*)
-    echo "Blocked dangerous operation: $combined" >&2
+if ($combined -match 'rm\s+-rf|sudo\s|git\s+push\s+(--force|-f)|DROP\s+TABLE|Remove-Item.*-Recurse.*-Force') {
+    [Console]::Error.WriteLine("Blocked dangerous operation: $combined")
     exit 1
-    ;;
-esac
+}
 exit 0
 ```
 
